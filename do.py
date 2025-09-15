@@ -1,191 +1,264 @@
-# pixel_watch_hotkeys.py
-# pip install mss keyboard pyautogui
-# Windows/macOS/Linux. Ctrl+C to exit.
+import time, keyboard, threading, atexit
+import win32gui, win32con, win32api
 
-import os, json, time, threading
-from typing import Tuple, Dict, Any
-import mss
-import keyboard
-import pyautogui
-import time
+# ---------------- Timings ----------------
+d=0.08; esc_gap=0.10; tab_gap=0.10; hold3=0.3
 
-# ====== SETTINGS ======
-SET_DIR = r"C:\ba\setting"
-SET_FILE = os.path.join(SET_DIR, "settings.json")
+# ---------------- State ----------------
+e1=threading.Event(); e3=threading.Event()
+busy=threading.Event()
+held=set()
+ARROWS=('up','down','left','right')
+ARROW_SC=set()
+pressed_sc=set()
+TARGET=None
+suppress_hook=None
 
-BLACK_TOL = 20             # channel must be <= this to count as "black"
-CONSEC_MATCHES = 2         # consecutive confirms before firing (for stability)
-LOG_EVERY_SEC = 60
-MONITOR_DELAY = 1.0        # seconds between checks
+# ---------------- VK map & PostMessage helpers ----------------
+VK = {
+    'esc':0x1B,'tab':0x09,'enter':0x0D,'home':0x24,
+    'up':0x26,'down':0x28,'left':0x25,'right':0x27,
+    '0':0x30,'1':0x31,'2':0x32,'3':0x33,'4':0x34,'5':0x35,'6':0x36,'9':0x39,
+}
+WM_KEYDOWN=0x0100; WM_KEYUP=0x0101
 
-COOLDOWN_COMBINED_S = 3.0  # cooldown for the combined trigger
-# ======================
+def post_key(hwnd, key):
+    vk = VK[key]
+    win32api.PostMessage(hwnd, WM_KEYDOWN, vk, 0)
+    win32api.PostMessage(hwnd, WM_KEYUP,   vk, 0)
 
-# --- Global monitoring state ---
-monitoring_enabled = True
+def post_seq(keys, gap):
+    """Send to TARGET if locked, else fallback to keyboard.send"""
+    if TARGET and win32gui.IsWindow(TARGET):
+        for k in keys:
+            post_key(TARGET, k); time.sleep(gap)
+    else:
+        for k in keys:
+            keyboard.send(k); time.sleep(gap)
 
-# --- Tail sequence: esc → 3 → home → enter → (3 → enter) x2 ---
-def _tail_sequence():
-    keyboard.send("esc")
-    time.sleep(0.050)
-    keyboard.send("3")         # use "num 3" if you want Numpad3 instead
-    time.sleep(0.050)
-    keyboard.send("home")
-    time.sleep(0.050)
-    keyboard.send("enter")
-    time.sleep(0.080)
-    for _ in range(2):         # repeat 3 -> enter two times
-        keyboard.send("3")
-        time.sleep(0.080)
-        keyboard.send("enter")
-        time.sleep(0.080)
+# ---------------- Key hold mgmt ----------------
+def press_hold(k):
+    if k not in held:
+        keyboard.press(k); held.add(k)
 
-# --- Actions (run when BOTH rule1 & rule2 pixels are black) ---
-def do_actions():
-    # Rule1 sequence: 300ms -> "2" -> 100ms -> "2" -> 300ms -> Numpad0 -> tail
-    time.sleep(0.300); keyboard.send("2")
-    time.sleep(0.100); keyboard.send("2")
-    time.sleep(0.300); keyboard.send("num 0")
-    _tail_sequence()
-    # Rule2 sequence: 300ms -> Numpad0 -> 100ms -> Numpad0 -> 300ms -> tail
-    time.sleep(0.300); keyboard.send("num 0")
-    time.sleep(0.100); keyboard.send("num 0")
-    time.sleep(0.300); _tail_sequence()
+def release(k):
+    if k in held:
+        keyboard.release(k); held.discard(k)
 
-state: Dict[str, Any] = {
-    "coord": None,         # (x, y) for rule 1
-    "coord2": None,        # (x, y) for rule 2
-    "last_trigger_combined": 0.0,
-    "streak_combined": 0,
+def cleanup():
+    release('3')
+    for k in list(held):
+        release(k)
+    global suppress_hook
+    if suppress_hook:
+        keyboard.unhook(suppress_hook); suppress_hook=None
+atexit.register(cleanup)
+
+def dbl_esc():
+    keyboard.send('esc'); time.sleep(0.08)
+    keyboard.send('esc'); time.sleep(0.08)
+
+# ---------------- Workers ----------------
+def w1():
+    while True:
+        e1.wait()
+        while e1.is_set():
+            time.sleep(0.01); post_seq(['1'], d)
+            if not e1.is_set(): break
+            post_seq(['up'], d)
+            if not e1.is_set(): break
+            post_seq(['enter'], d)
+
+def w3():
+    while True:
+        e3.wait()
+        # open path
+        time.sleep(0.01); post_seq(['esc'], esc_gap)
+        if not e3.is_set(): continue
+        post_seq(['esc'], esc_gap)
+        if not e3.is_set(): continue
+        post_seq(['tab'], tab_gap)
+        if not e3.is_set(): continue
+        post_seq(['tab'], tab_gap)
+        if not e3.is_set(): continue
+
+        # repeat press '3' for ~300ms
+        while e3.is_set():
+            keyboard.press('3'); t0=time.time()
+            while e3.is_set() and time.time()-t0<hold3: time.sleep(0.01)
+            keyboard.release('3')
+            if not e3.is_set(): break
+            time.sleep(0.02)
+
+        # tail: 100ms → Esc → 100ms → Esc
+        time.sleep(0.10); post_seq(['esc'], 0)
+        time.sleep(0.10); post_seq(['esc'], 0)
+
+# ---------------- Control helpers ----------------
+def stop1():
+    if e1.is_set():
+        e1.clear(); dbl_esc()
+
+def stop3():
+    if e3.is_set():
+        e3.clear(); release('3'); dbl_esc(); cleanup()
+
+def tog1():
+    if e1.is_set(): stop1()
+    else: stop3(); e1.set()
+
+def tog3():
+    if e3.is_set(): stop3()
+    else: stop1(); e3.set()
+
+def halt_all():
+    e1.clear(); e3.clear(); release('3')
+
+# ---------------- One-shot macros ----------------
+def macro9():
+    if busy.is_set(): return
+    halt_all()
+    post_seq(['esc','esc'], d)
+    post_seq(['9','home','enter'], d)
+
+def macroDel():  # NumpadDel custom sequence (two blocks)
+    if busy.is_set(): return
+    halt_all()
+
+    # --- Block 1 ---
+    time.sleep(0.10)                 # 100ms
+    post_seq(['esc'], 0)
+    time.sleep(0.10)                 # 100ms
+    post_seq(['esc'], 0)
+    time.sleep(0.20)                 # 200ms
+    post_seq(['tab'], 0.20)          # tab, 200ms
+    post_seq(['tab'], 0.20)          # tab, 200ms
+    post_seq(['5'], 0.20)            # 5, 200ms
+    post_seq(['6'], 0.10)            # 6, 100ms
+    time.sleep(0.10)                 # delay 100ms
+
+    # --- Block 2 ---
+    time.sleep(0.10)                 # 100ms
+    post_seq(['esc'], 0)
+    time.sleep(0.10)                 # 100ms
+    post_seq(['esc'], 0)
+    time.sleep(0.20)                 # 200ms
+    post_seq(['5'], 0)               # 5
+    time.sleep(0.05)                 # 50ms
+    post_seq(['home'], 0)            # home
+    time.sleep(0.10)                 # 100ms
+    post_seq(['enter'], 0)           # enter
+    time.sleep(0.10)                 # 100ms
+    post_seq(['6'], 0)               # 6
+    time.sleep(0.10)                 # 100ms
+    post_seq(['enter'], 0)           # enter
+
+def macro7():  # Numpad7 sequence + esc+esc + start NumPad3
+    if busy.is_set(): return
+    halt_all()
+    time.sleep(0.20)      # 200ms
+    post_seq(['esc'], 0)
+    time.sleep(0.10)      # 100ms
+    post_seq(['esc'], 0)
+    time.sleep(0.05)      # 50ms
+    post_seq(['tab'], 0)
+    time.sleep(0.15)      # 150ms
+    post_seq(['tab'], 0)
+    time.sleep(0.10)      # 100ms
+    post_seq(['4'], 0)
+    time.sleep(0.10)      # 100ms
+    post_seq(['enter'], 0)
+
+    # tail then start NumPad3
+    time.sleep(0.20)      # 200ms
+    post_seq(['esc'], 0)
+    time.sleep(0.10)      # 100ms
+    post_seq(['esc'], 0)
+    tog3()
+
+# ---------------- Exclusive macro0 (hard block inputs) ----------------
+def macro0():
+    global suppress_hook
+    if busy.is_set(): return
+    busy.set()
+    # suppress ALL hardware inputs globally while running
+    suppress_hook = keyboard.hook(lambda e: None, suppress=True)
+    try:
+        halt_all()
+        # Esc, Esc
+        post_seq(['esc','esc'], d)
+
+        # 0 x3
+        for _ in range(3):
+            post_seq(['0'], d)
+
+        # 3, Home, Enter
+        post_seq(['3'], d)
+        post_seq(['home'], d)
+        post_seq(['enter'], d)
+
+        # (3 -> Enter) × 4
+        for _ in range(4):
+            post_seq(['3'], 0.10)
+            post_seq(['enter'], d)
+
+    finally:
+        if suppress_hook:
+            keyboard.unhook(suppress_hook); suppress_hook=None
+        busy.clear()
+
+# ---------------- Keypad scancodes (num0 handled by add_hotkey) ----------------
+KP = {
+    'num1': set(keyboard.key_to_scan_codes('num 1')),
+    # NumPad2 handled only by add_hotkey
+    'num3': set(keyboard.key_to_scan_codes('num 3')),
+    'num7': set(keyboard.key_to_scan_codes('num 7')),
+    'num9': set(keyboard.key_to_scan_codes('num 9')),
+    'numdel': set(keyboard.key_to_scan_codes('num del')),
 }
 
-def ensure_dir():
-    os.makedirs(SET_DIR, exist_ok=True)
-
-def load_settings():
-    if not os.path.isfile(SET_FILE):
+# ---------------- Hook ----------------
+def hook(e):
+    if busy.is_set():
         return
-    try:
-        with open(SET_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        if isinstance(data.get("coord"), list) and len(data["coord"]) == 2:
-            state["coord"] = tuple(map(int, data["coord"]))
-        if isinstance(data.get("coord2"), list) and len(data["coord2"]) == 2:
-            state["coord2"] = tuple(map(int, data["coord2"]))
-    except Exception as e:
-        print(f"[Load] Failed: {e!r}")
 
-def save_settings():
-    ensure_dir()
-    try:
-        data = {
-            "coord":  list(state["coord"])  if state["coord"]  else None,
-            "coord2": list(state["coord2"]) if state["coord2"] else None,
-        }
-        with open(SET_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
-        print(f"[Saved] {SET_FILE} -> {data}")
-    except Exception as e:
-        print(f"[Save] Failed: {e!r}")
+    sc=e.scan_code
+    n=e.name or ''
+    if e.event_type=='down':
+        # real arrows
+        if n in ARROWS:
+            ARROW_SC.add(sc)
+            if e3.is_set():
+                if n in held: release(n)
+                else: press_hold(n)
+            return
 
-def get_mouse_xy() -> Tuple[int, int]:
-    x, y = pyautogui.position()
-    return int(x), int(y)
+        # debounce
+        if sc in pressed_sc: return
+        pressed_sc.add(sc)
 
-def read_pixel_rgb(sct: mss.mss, x: int, y: int) -> Tuple[int, int, int]:
-    bbox = {"top": y, "left": x, "width": 1, "height": 1}
-    shot = sct.grab(bbox)
-    r, g, b = shot.rgb[0], shot.rgb[1], shot.rgb[2]
-    return (r, g, b)
+        # ignore if it's an arrow scancode we've seen
+        if sc in ARROW_SC: return
 
-def is_black(rgb: Tuple[int,int,int], tol: int = BLACK_TOL) -> bool:
-    r, g, b = rgb
-    return (r <= tol) and (g <= tol) and (b <= tol)
+        # hotkeys
+        if sc in KP['num1']: tog1(); return
+        if sc in KP['num3']: tog3(); return
+        if sc in KP['num7']: macro7(); return
+        if sc in KP['num9']: macro9(); return
+        if sc in KP['numdel']: macroDel(); return
 
-# ---- Hotkeys ----
-def hotkey_set_coord_rule1():
-    x, y = get_mouse_xy()
-    state["coord"] = (x, y)
-    print(f"[Set R1] Coord = {state['coord']}")
-    save_settings()
+    elif e.event_type=='up':
+        pressed_sc.discard(sc)
 
-def hotkey_set_coord_rule2():
-    x, y = get_mouse_xy()
-    state["coord2"] = (x, y)
-    print(f"[Set R2] Coord = {state['coord2']}")
-    save_settings()
+# ---------------- Bindings ----------------
+keyboard.hook(hook, suppress=False)                        # generic hook
+keyboard.add_hotkey('num 0', macro0, suppress=False)       # Numpad0 single-press (exclusive)
+keyboard.add_hotkey('num 2', lambda: keyboard.send('2'), suppress=True)   # NumPad2 = "2"
+keyboard.add_hotkey('num 5', lambda: post_seq(['down'], 0), suppress=True)  # NumPad5 = Down Arrow
 
-def toggle_monitoring():
-    global monitoring_enabled
-    monitoring_enabled = not monitoring_enabled
-    print(f"[Toggle] Monitoring {'ENABLED' if monitoring_enabled else 'PAUSED'}")
+# ---------------- Threads ----------------
+threading.Thread(target=w1, daemon=True).start()
+threading.Thread(target=w3, daemon=True).start()
 
-def register_hotkeys():
-    keyboard.add_hotkey("shift+v", hotkey_set_coord_rule1, suppress=False)  # set coord for rule1
-    keyboard.add_hotkey("shift+n", hotkey_set_coord_rule2, suppress=False)  # set coord for rule2
-    keyboard.add_hotkey("shift+p", toggle_monitoring,   suppress=False)     # start/pause
-    print("[Hotkeys] R1: Shift+V=coord | R2: Shift+N=coord | Shift+P=start/pause")
-
-# ---- Monitor ----
-def monitor_loop():
-    last_log = 0.0
-    print("[Monitor] Started")
-    time.sleep(0.3)
-    with mss.mss() as sct:
-        while True:
-            t0 = time.time()
-
-            if not monitoring_enabled:
-                time.sleep(0.2)
-                continue
-
-            if not (state["coord"] and state["coord2"]):
-                if t0 - last_log >= 3:
-                    last_log = t0
-                    print("[Warn] Set R1 coord (Shift+V) and R2 coord (Shift+N).")
-                time.sleep(0.25)
-                continue
-
-            try:
-                (x1, y1) = state["coord"]
-                (x2, y2) = state["coord2"]
-
-                obs1 = read_pixel_rgb(sct, x1, y1)
-                obs2 = read_pixel_rgb(sct, x2, y2)
-
-                # Combined condition: BOTH are black
-                if is_black(obs1) and is_black(obs2):
-                    state["streak_combined"] += 1
-                    if state["streak_combined"] >= CONSEC_MATCHES:
-                        now = time.time()
-                        if now - state["last_trigger_combined"] >= COOLDOWN_COMBINED_S:
-                            threading.Thread(target=do_actions, daemon=True).start()
-                            state["last_trigger_combined"] = now
-                            state["streak_combined"] = 0
-                else:
-                    state["streak_combined"] = 0
-
-                if t0 - last_log >= LOG_EVERY_SEC:
-                    last_log = t0
-                    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] alive; "
-                          f"R1={state['coord']} R2={state['coord2']} tol={BLACK_TOL}")
-
-            except Exception as e:
-                print(f"[Monitor] Error: {e!r}. Recovering…")
-                time.sleep(0.5)
-
-            time.sleep(MONITOR_DELAY)
-
-if __name__ == "__main__":
-    ensure_dir()
-    load_settings()
-    print("[Init] Settings:", {
-        "coord": state["coord"],
-        "coord2": state["coord2"],
-        "black_tol": BLACK_TOL
-    })
-    register_hotkeys()
-    try:
-        monitor_loop()
-    except KeyboardInterrupt:
-        print("\n[Exit] Bye")
+# ---------------- Main ----------------
+keyboard.wait()
