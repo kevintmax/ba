@@ -11,7 +11,7 @@ def toggle_pause():
     with pause_lock:
         paused = not paused
         print(f"[MASTER] {'PAUSED' if paused else 'RESUMED'}")
-keyboard.add_hotkey('-', toggle_pause, suppress=False)
+keyboard.add_hotkey('f2', toggle_pause, suppress=False)
 def is_paused():
     with pause_lock:
         return paused
@@ -266,14 +266,28 @@ def on_space_down(_):
 def on_space_up(_):
     if is_paused(): reinject_local('space','up'); return
 
-def on_x_down(_):
-    if is_paused(): reinject_local('x','down'); return
-    if _is_valid(target_h): post_vk_to(target_h, VK['A'], True, extended=False)
-    if _is_valid(target_s): post_vk_to(target_s, VK['A'], True, extended=False)
-def on_x_up(_):
-    if is_paused(): reinject_local('x','up'); return
-    if _is_valid(target_h): post_vk_to(target_h, VK['A'], False, extended=False)
-    if _is_valid(target_s): post_vk_to(target_s, VK['A'], False, extended=False)
+# --- FIXED X toggle ---
+x_running = False
+def x_loop():
+    global x_running
+    while x_running:
+        if not is_paused() and _is_valid(target_h):
+            post_vk_to(target_h, VK['A'], True)
+            post_vk_to(target_h, VK['A'], False)
+        time.sleep(0.3)
+
+def on_x(e):
+    global x_running
+    if e.event_type == 'down':
+        if not x_running:
+            x_running = True
+            threading.Thread(target=x_loop, daemon=True).start()
+            print("[X] started")
+        else:
+            x_running = False
+            print("[X] stopped")
+keyboard.hook_key('x', on_x, suppress=True)
+# ----------------------
 
 keyboard.on_press_key('w', on_w_down, suppress=True)
 keyboard.on_release_key('w', on_w_up, suppress=True)
@@ -289,20 +303,11 @@ keyboard.on_press_key('e', on_e_down, suppress=True)
 keyboard.on_release_key('e', on_e_up, suppress=True)
 keyboard.on_press_key('space', on_space_down, suppress=True)
 keyboard.on_release_key('space', on_space_up, suppress=True)
-keyboard.on_press_key('x', on_x_down, suppress=True)
-keyboard.on_release_key('x', on_x_up, suppress=True)
 
 keyboard.add_hotkey('shift+s', set_target_s, suppress=False)
 keyboard.add_hotkey('shift+h', set_target_h, suppress=False)
 
-for n in ARROW_VK:
-    keyboard.on_press_key(n, make_arrow_press(n), suppress=True)
-    keyboard.on_release_key(n, make_arrow_release(n), suppress=True)
-for sc in [76,83,78,82,79,81,71,73]:
-    keyboard.on_press_key(sc, make_np_press(sc), suppress=True)
-    keyboard.on_release_key(sc, make_np_release(sc), suppress=True)
-
-print("Routing active. '-' toggles pause. Shift+S/H to lock targets.")
+print("Routing active. 'F2' toggles pause. Shift+S/H to lock targets.")
 try:
     keyboard.wait()
 finally:
