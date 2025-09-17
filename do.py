@@ -1,10 +1,7 @@
 import time, keyboard, threading, atexit
 import win32gui, win32con, win32api
 
-# ---------------- Timings ----------------
 d=0.08; esc_gap=0.10; tab_gap=0.10; hold3=0.3
-
-# ---------------- State ----------------
 e1=threading.Event(); e3=threading.Event()
 busy=threading.Event()
 held=set()
@@ -14,7 +11,6 @@ pressed_sc=set()
 TARGET=None
 suppress_hook=None
 
-# ---------------- VK map & PostMessage helpers ----------------
 VK = {
     'esc':0x1B,'tab':0x09,'enter':0x0D,'home':0x24,
     'up':0x26,'down':0x28,'left':0x25,'right':0x27,
@@ -28,7 +24,6 @@ def post_key(hwnd, key):
     win32api.PostMessage(hwnd, WM_KEYUP,   vk, 0)
 
 def post_seq(keys, gap):
-    """Send to TARGET if locked, else fallback to keyboard.send"""
     if TARGET and win32gui.IsWindow(TARGET):
         for k in keys:
             post_key(TARGET, k); time.sleep(gap)
@@ -36,7 +31,6 @@ def post_seq(keys, gap):
         for k in keys:
             keyboard.send(k); time.sleep(gap)
 
-# ---------------- Key hold mgmt ----------------
 def press_hold(k):
     if k not in held:
         keyboard.press(k); held.add(k)
@@ -58,7 +52,6 @@ def dbl_esc():
     keyboard.send('esc'); time.sleep(0.08)
     keyboard.send('esc'); time.sleep(0.08)
 
-# ---------------- Workers ----------------
 def w1():
     while True:
         e1.wait()
@@ -72,7 +65,6 @@ def w1():
 def w3():
     while True:
         e3.wait()
-        # open path
         time.sleep(0.01); post_seq(['esc'], esc_gap)
         if not e3.is_set(): continue
         post_seq(['esc'], esc_gap)
@@ -81,20 +73,15 @@ def w3():
         if not e3.is_set(): continue
         post_seq(['tab'], tab_gap)
         if not e3.is_set(): continue
-
-        # repeat press '3' for ~300ms
         while e3.is_set():
             keyboard.press('3'); t0=time.time()
             while e3.is_set() and time.time()-t0<hold3: time.sleep(0.01)
             keyboard.release('3')
             if not e3.is_set(): break
             time.sleep(0.02)
-
-        # tail: 100ms → Esc → 100ms → Esc
         time.sleep(0.10); post_seq(['esc'], 0)
         time.sleep(0.10); post_seq(['esc'], 0)
 
-# ---------------- Control helpers ----------------
 def stop1():
     if e1.is_set():
         e1.clear(); dbl_esc()
@@ -114,151 +101,132 @@ def tog3():
 def halt_all():
     e1.clear(); e3.clear(); release('3')
 
-# ---------------- One-shot macros ----------------
 def macro9():
     if busy.is_set(): return
     halt_all()
     post_seq(['esc','esc'], d)
     post_seq(['9','home','enter'], d)
 
-def macroDel():  # NumpadDel custom sequence (two blocks)
+def macroDel():
     if busy.is_set(): return
     halt_all()
-
-    # --- Block 1 ---
-    time.sleep(0.10)                 # 100ms
+    time.sleep(0.10)
     post_seq(['esc'], 0)
-    time.sleep(0.10)                 # 100ms
+    time.sleep(0.10)
     post_seq(['esc'], 0)
-    time.sleep(0.20)                 # 200ms
-    post_seq(['tab'], 0.20)          # tab, 200ms
-    post_seq(['tab'], 0.20)          # tab, 200ms
-    post_seq(['5'], 0.20)            # 5, 200ms
-    post_seq(['6'], 0.10)            # 6, 100ms
-    time.sleep(0.10)                 # delay 100ms
-
-    # --- Block 2 ---
-    time.sleep(0.10)                 # 100ms
+    time.sleep(0.20)
+    post_seq(['tab'], 0.20)
+    post_seq(['tab'], 0.20)
+    post_seq(['5'], 0.20)
+    post_seq(['6'], 0.10)
+    time.sleep(0.10)
+    time.sleep(0.10)
     post_seq(['esc'], 0)
-    time.sleep(0.10)                 # 100ms
+    time.sleep(0.10)
     post_seq(['esc'], 0)
-    time.sleep(0.20)                 # 200ms
-    post_seq(['5'], 0)               # 5
-    time.sleep(0.05)                 # 50ms
-    post_seq(['home'], 0)            # home
-    time.sleep(0.10)                 # 100ms
-    post_seq(['enter'], 0)           # enter
-    time.sleep(0.10)                 # 100ms
-    post_seq(['6'], 0)               # 6
-    time.sleep(0.10)                 # 100ms
-    post_seq(['enter'], 0)           # enter
-
-def macro7():  # Numpad7 sequence + esc+esc + start NumPad3
-    if busy.is_set(): return
-    halt_all()
-    time.sleep(0.20)      # 200ms
-    post_seq(['esc'], 0)
-    time.sleep(0.10)      # 100ms
-    post_seq(['esc'], 0)
-    time.sleep(0.05)      # 50ms
-    post_seq(['tab'], 0)
-    time.sleep(0.15)      # 150ms
-    post_seq(['tab'], 0)
-    time.sleep(0.10)      # 100ms
-    post_seq(['4'], 0)
-    time.sleep(0.10)      # 100ms
+    time.sleep(0.20)
+    post_seq(['5'], 0)
+    time.sleep(0.05)
+    post_seq(['home'], 0)
+    time.sleep(0.10)
+    post_seq(['enter'], 0)
+    time.sleep(0.10)
+    post_seq(['6'], 0)
+    time.sleep(0.10)
     post_seq(['enter'], 0)
 
-    # tail then start NumPad3
-    time.sleep(0.20)      # 200ms
+def macro7():
+    if busy.is_set(): return
+    halt_all()
+    time.sleep(0.20)
     post_seq(['esc'], 0)
-    time.sleep(0.10)      # 100ms
+    time.sleep(0.10)
+    post_seq(['esc'], 0)
+    time.sleep(0.05)
+    post_seq(['tab'], 0)
+    time.sleep(0.15)
+    post_seq(['tab'], 0)
+    time.sleep(0.10)
+    post_seq(['4'], 0)
+    time.sleep(0.10)
+    post_seq(['enter'], 0)
+    time.sleep(0.20)
+    post_seq(['esc'], 0)
+    time.sleep(0.10)
     post_seq(['esc'], 0)
     tog3()
 
-# ---------------- Exclusive macro0 (hard block inputs) ----------------
 def macro0():
     global suppress_hook
     if busy.is_set(): return
     busy.set()
-    # suppress ALL hardware inputs globally while running
+    was_running_e3 = e3.is_set()
+    if was_running_e3: stop3()
     suppress_hook = keyboard.hook(lambda e: None, suppress=True)
     try:
         halt_all()
-        # Esc, Esc
-        post_seq(['esc','esc'], d)
-
-        # 0 x3
-        for _ in range(3):
-            post_seq(['0'], d)
-
-        # 3, Home, Enter
-        post_seq(['3'], d)
-        post_seq(['home'], d)
-        post_seq(['enter'], d)
-
-        # (3 -> Enter) × 4
-        for _ in range(4):
-            post_seq(['3'], 0.10)
-            post_seq(['enter'], d)
-
+        time.sleep(0.03)
+        post_seq(['esc'], 0)
+        time.sleep(0.03)
+        post_seq(['esc'], 0)
+        time.sleep(0.05)
+        post_seq(['3'], 0)
+        time.sleep(0.05)
+        post_seq(['home'], 0)
+        time.sleep(0.03)
+        post_seq(['enter'], 0)
+        time.sleep(0.03)
+        for _ in range(5): 
+            time.sleep(0.03)
+            post_seq(['3'], 0)
+            time.sleep(0.05)
+            post_seq(['enter'], 0)
+            time.sleep(0.05)
+            post_seq(['0'], 0)
+            time.sleep(0.03)
     finally:
         if suppress_hook:
             keyboard.unhook(suppress_hook); suppress_hook=None
         busy.clear()
+        if was_running_e3: tog3()
 
-# ---------------- Keypad scancodes (num0 handled by add_hotkey) ----------------
 KP = {
     'num1': set(keyboard.key_to_scan_codes('num 1')),
-    # NumPad2 handled only by add_hotkey
     'num3': set(keyboard.key_to_scan_codes('num 3')),
     'num7': set(keyboard.key_to_scan_codes('num 7')),
     'num9': set(keyboard.key_to_scan_codes('num 9')),
     'numdel': set(keyboard.key_to_scan_codes('num del')),
 }
 
-# ---------------- Hook ----------------
 def hook(e):
     if busy.is_set():
         return
-
     sc=e.scan_code
     n=e.name or ''
     if e.event_type=='down':
-        # real arrows
         if n in ARROWS:
             ARROW_SC.add(sc)
             if e3.is_set():
                 if n in held: release(n)
                 else: press_hold(n)
             return
-
-        # debounce
         if sc in pressed_sc: return
         pressed_sc.add(sc)
-
-        # ignore if it's an arrow scancode we've seen
         if sc in ARROW_SC: return
-
-        # hotkeys
         if sc in KP['num1']: tog1(); return
         if sc in KP['num3']: tog3(); return
         if sc in KP['num7']: macro7(); return
         if sc in KP['num9']: macro9(); return
         if sc in KP['numdel']: macroDel(); return
-
     elif e.event_type=='up':
         pressed_sc.discard(sc)
 
-# ---------------- Bindings ----------------
-keyboard.hook(hook, suppress=False)                        # generic hook
-keyboard.add_hotkey('num 0', macro0, suppress=False)       # Numpad0 single-press (exclusive)
-keyboard.add_hotkey('num 2', lambda: keyboard.send('2'), suppress=True)   # NumPad2 = "2"
-keyboard.add_hotkey('num 5', lambda: post_seq(['down'], 0), suppress=True)  # NumPad5 = Down Arrow
+keyboard.hook(hook, suppress=False)
+keyboard.add_hotkey('num 0', macro0, suppress=False)
+keyboard.add_hotkey('num 2', lambda: keyboard.send('2'), suppress=True)
+keyboard.add_hotkey('num 5', lambda: post_seq(['down'], 0), suppress=True)
 
-# ---------------- Threads ----------------
 threading.Thread(target=w1, daemon=True).start()
 threading.Thread(target=w3, daemon=True).start()
 
-# ---------------- Main ----------------
 keyboard.wait()
