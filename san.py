@@ -1,12 +1,7 @@
 # -*- coding: utf-8 -*-
 import time, threading
 from threading import Lock
-from dataclasses import dataclass
-from typing import Tuple, Optional
-import keyboard, mouse, mss
-from PIL import Image
-import ctypes
-from ctypes import wintypes
+import keyboard
 import win32gui, win32con, win32api
 
 paused = False
@@ -17,7 +12,7 @@ def toggle_pause():
         paused = not paused
         print(f"[MASTER] {'PAUSED' if paused else 'RESUMED'}")
 keyboard.add_hotkey('-', toggle_pause, suppress=False)
-def is_paused() -> bool:
+def is_paused():
     with pause_lock:
         return paused
 
@@ -68,7 +63,6 @@ VK = {
     'NUMPAD0': win32con.VK_NUMPAD0,
     'NUMPAD3': win32con.VK_NUMPAD3,
     'A': ord('A'),
-    '0': ord('0'),
     '1': ord('1'),
     '2': ord('2'),
     '3': ord('3'),
@@ -79,14 +73,11 @@ VK = {
 injecting = set()
 inj_lock = Lock()
 def _inj_add(name):
-    with inj_lock:
-        injecting.add(name)
+    with inj_lock: injecting.add(name)
 def _inj_del(name):
-    with inj_lock:
-        injecting.discard(name)
+    with inj_lock: injecting.discard(name)
 def is_injected(name):
-    with inj_lock:
-        return name in injecting
+    with inj_lock: return name in injecting
 def reinject_local(name, event_type):
     if not name or is_injected(name): return
     _inj_add(name)
@@ -129,8 +120,19 @@ for n in ARROW_VK:
     keyboard.on_press_key(n, make_arrow_press(n), suppress=True)
     keyboard.on_release_key(n, make_arrow_release(n), suppress=True)
 
-NUMPAD_SC_TO_VK = {82: win32con.VK_NUMPAD0, 79: win32con.VK_NUMPAD1, 81: win32con.VK_NUMPAD3, 71: win32con.VK_NUMPAD7, 73: win32con.VK_NUMPAD9, 76: None, 78: None, 83: None}
-NUMPAD_SC_TO_NAME = {82:'num 0',79:'num 1',81:'num 3',71:'num 7',73:'num 9',76:'num 5',78:'num add',83:'num del'}
+NUMPAD_SC_TO_VK = {
+    82: win32con.VK_NUMPAD0,
+    79: win32con.VK_NUMPAD1,
+    81: win32con.VK_NUMPAD3,
+    71: win32con.VK_NUMPAD7,
+    73: win32con.VK_NUMPAD9,
+    76: None,
+    78: None,
+    83: None
+}
+NUMPAD_SC_TO_NAME = {
+    82:'num 0',79:'num 1',81:'num 3',71:'num 7',73:'num 9',76:'num 5',78:'num add',83:'num del'
+}
 def make_np_press(sc):
     def h(e):
         if is_paused(): reinject_local(NUMPAD_SC_TO_NAME.get(sc,''),'down'); return
@@ -181,6 +183,7 @@ def run_e_to_h():
 def space_once_to_h():
     if not _is_valid(target_h): return
     tap_vk_to(target_h, VK['3'])
+
 def on_w_down(_):
     if is_paused(): reinject_local('w','down'); return
     if not _is_valid(target_h): reinject_local('w','down'); return
@@ -195,6 +198,7 @@ def on_w_up(_):
         pressed_h['w'] = False
         post_vk_to(target_h, VK['UP'], False, extended=True)
     if not _fg_is_target_h(): reinject_local('w','up')
+
 def on_a_down(_):
     if is_paused(): reinject_local('a','down'); return
     if not _is_valid(target_h): reinject_local('a','down'); return
@@ -209,6 +213,7 @@ def on_a_up(_):
         pressed_h['a'] = False
         post_vk_to(target_h, VK['LEFT'], False, extended=True)
     if not _fg_is_target_h(): reinject_local('a','up')
+
 def on_s_down(_):
     if keyboard.is_pressed('shift'):
         set_target_s(); return
@@ -227,6 +232,7 @@ def on_s_up(_):
         pressed_h['s'] = False
         post_vk_to(target_h, VK['DOWN'], False, extended=True)
     if not _fg_is_target_h(): reinject_local('s','up')
+
 def on_d_down(_):
     if is_paused(): reinject_local('d','down'); return
     if not _is_valid(target_h): reinject_local('d','down'); return
@@ -241,21 +247,25 @@ def on_d_up(_):
         pressed_h['d'] = False
         post_vk_to(target_h, VK['RIGHT'], False, extended=True)
     if not _fg_is_target_h(): reinject_local('d','up')
+
 def on_q_down(_):
     if is_paused(): reinject_local('q','down'); return
     threading.Thread(target=run_q_to_h, daemon=True).start()
 def on_q_up(_):
     if is_paused(): reinject_local('q','up'); return
+
 def on_e_down(_):
     if is_paused(): reinject_local('e','down'); return
     threading.Thread(target=run_e_to_h, daemon=True).start()
 def on_e_up(_):
     if is_paused(): reinject_local('e','up'); return
+
 def on_space_down(_):
     if is_paused(): reinject_local('space','down'); return
     threading.Thread(target=space_once_to_h, daemon=True).start()
 def on_space_up(_):
     if is_paused(): reinject_local('space','up'); return
+
 def on_x_down(_):
     if is_paused(): reinject_local('x','down'); return
     if _is_valid(target_h): post_vk_to(target_h, VK['A'], True, extended=False)
@@ -264,6 +274,7 @@ def on_x_up(_):
     if is_paused(): reinject_local('x','up'); return
     if _is_valid(target_h): post_vk_to(target_h, VK['A'], False, extended=False)
     if _is_valid(target_s): post_vk_to(target_s, VK['A'], False, extended=False)
+
 keyboard.on_press_key('w', on_w_down, suppress=True)
 keyboard.on_release_key('w', on_w_up, suppress=True)
 keyboard.on_press_key('a', on_a_down, suppress=True)
@@ -284,106 +295,15 @@ keyboard.on_release_key('x', on_x_up, suppress=True)
 keyboard.add_hotkey('shift+s', set_target_s, suppress=False)
 keyboard.add_hotkey('shift+h', set_target_h, suppress=False)
 
-def send_2_to_s():
-    if not _is_valid(target_s): return
-    tap_vk_to(target_s, VK['2'], extended=False, sleep=0.03)
-def send_numpad0_to_s():
-    if not _is_valid(target_s): return
-    tap_vk_to(target_s, VK['NUMPAD0'], extended=False, sleep=0.03)
-def send_numpad3_to_s():
-    if not _is_valid(target_s): return
-    tap_vk_to(target_s, VK['NUMPAD3'], extended=False, sleep=0.03)
+for n in ARROW_VK:
+    keyboard.on_press_key(n, make_arrow_press(n), suppress=True)
+    keyboard.on_release_key(n, make_arrow_release(n), suppress=True)
+for sc in [76,83,78,82,79,81,71,73]:
+    keyboard.on_press_key(sc, make_np_press(sc), suppress=True)
+    keyboard.on_release_key(sc, make_np_release(sc), suppress=True)
 
-MONITOR_SEC = 10.0
-BLACK_TOL = 30
-@dataclass
-class Point: x:int; y:int
-hp_px: Optional[Point] = None
-mp_px: Optional[Point] = None
-run_monitor = False
-monitor_lock = Lock()
-def _bbox_for_point(p: Point):
-    return {"left": p.x, "top": p.y, "width": 1, "height": 1}
-def _grab_pixel_rgb(p: Optional[Point]) -> Optional[Tuple[int,int,int]]:
-    if p is None: return None
-    with mss.mss() as sct:
-        mon = sct.monitors[0]
-        if not (mon["left"] <= p.x < mon["left"]+mon["width"] and mon["top"] <= p.y < mon["top"]+mon["height"]):
-            return None
-        shot = sct.grab(_bbox_for_point(p))
-        img = Image.frombytes("RGB", shot.size, shot.rgb)
-    return img.getpixel((0,0))
-def is_black(rgb: Optional[Tuple[int,int,int]], tol: int = BLACK_TOL) -> bool:
-    if rgb is None: return False
-    r, g, b = rgb
-    return r <= tol and g <= tol and b <= tol
-
-def arm_hp():
-    def once(evt):
-        global hp_px
-        if isinstance(evt, mouse.ButtonEvent) and evt.event_type=="down" and evt.button=="left":
-            x,y = mouse.get_position()
-            hp_px = Point(x,y)
-            mouse.unhook(once)
-            print(f"[HP PIXEL SET] ({x},{y})")
-            _ensure_monitor()
-    mouse.hook(once)
-def arm_mp():
-    def once(evt):
-        global mp_px
-        if isinstance(evt, mouse.ButtonEvent) and evt.event_type=="down" and evt.button=="left":
-            x,y = mouse.get_position()
-            mp_px = Point(x,y)
-            mouse.unhook(once)
-            print(f"[MP PIXEL SET] ({x},{y})")
-            _ensure_monitor()
-    mouse.hook(once)
-keyboard.add_hotkey("shift+j", arm_hp, suppress=False)
-keyboard.add_hotkey("shift+k", arm_mp, suppress=False)
-
-def _ensure_monitor():
-    global run_monitor
-    if not run_monitor:
-        run_monitor = True
-        threading.Thread(target=monitor_loop, daemon=True).start()
-
-def _hp_replenish_sequence():
-    if not _is_valid(target_s): return
-    tap_vk_to(target_s, VK['NUMPAD0'], extended=False, sleep=0.03)
-
-def _mp_action_then_check_hp():
-    did_refill = False
-    while True:
-        if is_paused(): return
-        rgb = _grab_pixel_rgb(mp_px)
-        if not is_black(rgb):
-            if did_refill and rgb is not None and not is_black(rgb):
-                tap_vk_to(target_s, VK['0'], extended=False, sleep=0.03)
-            break
-        send_2_to_s()
-        did_refill = True
-        time.sleep(0.5)
-        if is_black(_grab_pixel_rgb(hp_px)):
-            _hp_replenish_sequence()
-
-def monitor_loop():
-    while run_monitor:
-        if is_paused():
-            time.sleep(0.2); continue
-        hp_rgb = _grab_pixel_rgb(hp_px)
-        mp_rgb = _grab_pixel_rgb(mp_px)
-        with monitor_lock:
-            if is_black(mp_rgb):
-                _mp_action_then_check_hp()
-            elif is_black(hp_rgb):
-                _hp_replenish_sequence()
-        slept = 0.0
-        while slept < MONITOR_SEC and run_monitor and not is_paused():
-            step = min(0.1, MONITOR_SEC - slept)
-            time.sleep(step); slept += step
-
+print("Routing active. '-' toggles pause. Shift+S/H to lock targets.")
 try:
     keyboard.wait()
 finally:
-    run_monitor = False
     keyboard.unhook_all_hotkeys()
