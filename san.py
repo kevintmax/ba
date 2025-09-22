@@ -67,6 +67,7 @@ VK = {
     '2': ord('2'),
     '3': ord('3'),
     '9': ord('9'),
+    '0': ord('0'),
     ',': 0xBC
 }
 
@@ -87,6 +88,11 @@ def reinject_local(name, event_type):
     finally:
         time.sleep(0.005)
         _inj_del(name)
+
+def send_0_to_s():
+    if _is_valid(target_s):
+        tap_vk_to(target_s, VK['0'], extended=False, sleep=0.03)
+keyboard.add_hotkey('/', send_0_to_s, suppress=False)
 
 ARROW_VK = {'up':VK['UP'],'down':VK['DOWN'],'left':VK['LEFT'],'right':VK['RIGHT']}
 def _send_arrow_to_both(vk, is_down):
@@ -266,7 +272,6 @@ def on_space_down(_):
 def on_space_up(_):
     if is_paused(): reinject_local('space','up'); return
 
-# --- FIXED X toggle ---
 x_running = False
 def x_loop():
     global x_running
@@ -275,7 +280,6 @@ def x_loop():
             post_vk_to(target_h, VK['A'], True)
             post_vk_to(target_h, VK['A'], False)
         time.sleep(0.3)
-
 def on_x(e):
     global x_running
     if e.event_type == 'down':
@@ -287,7 +291,6 @@ def on_x(e):
             x_running = False
             print("[X] stopped")
 keyboard.hook_key('x', on_x, suppress=True)
-# ----------------------
 
 keyboard.on_press_key('w', on_w_down, suppress=True)
 keyboard.on_release_key('w', on_w_up, suppress=True)
