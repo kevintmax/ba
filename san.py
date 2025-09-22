@@ -66,6 +66,7 @@ VK = {
     '1': ord('1'),
     '2': ord('2'),
     '3': ord('3'),
+    '8': ord('8'),
     '9': ord('9'),
     '0': ord('0'),
     ',': 0xBC
@@ -89,10 +90,10 @@ def reinject_local(name, event_type):
         time.sleep(0.005)
         _inj_del(name)
 
-def send_0_to_s():
+def send_8_to_s():
     if _is_valid(target_s):
-        tap_vk_to(target_s, VK['0'], extended=False, sleep=0.03)
-keyboard.add_hotkey('/', send_0_to_s, suppress=False)
+        tap_vk_to(target_s, VK['8'], extended=False, sleep=0.03)
+keyboard.add_hotkey('/', send_8_to_s, suppress=False)
 
 ARROW_VK = {'up':VK['UP'],'down':VK['DOWN'],'left':VK['LEFT'],'right':VK['RIGHT']}
 def _send_arrow_to_both(vk, is_down):
