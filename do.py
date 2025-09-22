@@ -26,7 +26,7 @@ def is_paused():
 VK={'esc':0x1B,'tab':0x09,'enter':0x0D,'home':0x24,
     'up':0x26,'down':0x28,'left':0x25,'right':0x27,
     '0':0x30,'1':0x31,'2':0x32,'3':0x33,'4':0x34,
-    '5':0x35,'6':0x36,'9':0x39,'A':0x41}
+    '5':0x35,'6':0x36,'8':0x38,'9':0x39,'A':0x41}
 WM_KEYDOWN=0x0100; WM_KEYUP=0x0101
 
 def post_key(hwnd,key):
@@ -122,7 +122,7 @@ def macro7():
     halt_all()
     time.sleep(0.20); post_seq(['esc'],0); time.sleep(0.10)
     post_seq(['esc'],0); time.sleep(0.05); post_seq(['tab'],0); time.sleep(0.15)
-    post_seq(['tab'],0); time.sleep(0.10); post_seq(['4'],0); time.sleep(0.10)
+    post_seq(['tab'],0); time.sleep(0.10); post_seq(['0'],0); time.sleep(0.10)  # changed from '4' to '0'
     post_seq(['enter'],0); time.sleep(0.20); post_seq(['esc'],0); time.sleep(0.10)
     post_seq(['esc'],0)
     tog3()
@@ -145,12 +145,12 @@ def macro0():
             time.sleep(0.03)
             post_seq(['3'],0); time.sleep(0.05)
             post_seq(['enter'],0); time.sleep(0.05)
-            post_seq(['0'],0); time.sleep(0.03)
+            post_seq(['8'],0); time.sleep(0.03)  # changed from '0' to '8'
     finally:
         if suppress_hook:
             keyboard.unhook(suppress_hook); suppress_hook=None
         busy.clear()
-        tog3()  # always restart numpad3 after macro0
+        tog3()
 
 KP={
     'num1':set(keyboard.key_to_scan_codes('num 1')),
@@ -188,7 +188,7 @@ def send_down_any():
         win32api.PostMessage(hwnd,WM_KEYUP,VK['down'],0)
 
 keyboard.hook(hook,suppress=False)
-keyboard.add_hotkey('num 0',macro0,suppress=False)
+keyboard.add_hotkey('num 0',macro0,suppress=False)   # only NumPad0 triggers macro0
 keyboard.add_hotkey('num 5',send_down_any,suppress=True)
 
 threading.Thread(target=w1,daemon=True).start()
